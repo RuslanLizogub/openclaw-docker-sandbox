@@ -175,6 +175,11 @@ If Telegram replies are missing, confirm:
 - your numeric user id is listed in `TELEGRAM_ALLOWED_USER_IDS`
 - container logs do not show channel/auth errors
 
+If startup fails with `mkdir: cannot create directory '/home/openclaw': Permission denied`:
+
+- ensure your `docker-compose.yml` does not include `cap_drop: [ALL]` for this service
+- run `docker compose down && docker compose up -d --build` after pulling the latest repo changes
+
 ## Cleanup
 
 See `CLEANUP.md` for commands to wipe memory and browser profile data.
