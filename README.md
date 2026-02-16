@@ -35,7 +35,7 @@ flowchart LR
   A <--> W
 ```
 
-## Quick Start (3 шага)
+## Quick Start (4 шага)
 
 1. Подготовьте `.env`:
 
@@ -43,21 +43,29 @@ flowchart LR
 cp .env.example .env
 ```
 
-2. Укажите минимальные параметры в `.env`:
+2. Откройте `.env` и заполните верхний блок `MANDATORY`:
+
+- `AI_PROVIDER` (`openai` или `anthropic` или `google`)
+- Ровно один ключ для выбранного провайдера:
+  - `OPENAI_API_KEY`, если `AI_PROVIDER=openai`
+  - `ANTHROPIC_API_KEY`, если `AI_PROVIDER=anthropic`
+  - `GOOGLE_GENERATIVE_AI_API_KEY`, если `AI_PROVIDER=google`
+
+Пример для OpenAI:
 
 ```dotenv
 AI_PROVIDER=openai
 OPENAI_API_KEY=your_api_key_here
 ```
 
-Если хотите тест через Telegram, добавьте:
+3. Если нужен Telegram-бот, в том же `MANDATORY` блоке добавьте:
 
 ```dotenv
 TELEGRAM_BOT_TOKEN=123456:ABCDEF...
 TELEGRAM_ALLOWED_USER_IDS=123456789
 ```
 
-3. Запустите всё одной командой:
+4. Запустите всё одной командой:
 
 ```bash
 docker compose up --build
@@ -68,9 +76,11 @@ docker compose up --build
 | Параметр | Нужен для старта | Что делает |
 |---|---|---|
 | `AI_PROVIDER` | Да | Выбор провайдера (`openai`, `anthropic`, `google`) |
-| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` | Да (один из) | Доступ к выбранной модели |
+| `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` / `GOOGLE_GENERATIVE_AI_API_KEY` | Да (ровно один по `AI_PROVIDER`) | Доступ к выбранной модели |
 | `TELEGRAM_BOT_TOKEN` | Нет | Включает Telegram-канал |
 | `TELEGRAM_ALLOWED_USER_IDS` | Нет (рекомендуется) | Ограничивает доступ к боту по user ID |
+
+Все остальные параметры в `.env.example` находятся в блоке `DEFAULTS` и их можно не менять на первом запуске.
 
 ## Где лежат постоянные данные
 
@@ -79,6 +89,8 @@ docker compose up --build
 | `./data/storage` | `/home/openclaw/.openclaw/storage` | Память агента, SQLite, состояние |
 | `./data/browser` | `/home/openclaw/.openclaw/browser-profile` | Сессии/логины браузера |
 | `./workspace` | `/home/openclaw/.openclaw/workspace` | Ваши файлы и результаты задач |
+
+Папки с данными исключены из репозитория (`data/`, `.data/`, `workspace/` в `.gitignore`).
 
 ## RHYTHM Test-Case: Telegram -> Browser -> Screenshot
 

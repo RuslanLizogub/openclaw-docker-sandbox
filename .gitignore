@@ -5,6 +5,7 @@
 
 # Persistent runtime data
 data/
+.data/
 workspace/
 
 # OS / editor junk
