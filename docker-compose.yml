@@ -5,27 +5,31 @@ services:
       context: .
       dockerfile: Dockerfile
       args:
-        NODE_VERSION: ${NODE_VERSION:-22.22.0}
         OPENCLAW_REF: ${OPENCLAW_REF:-v2026.2.15}
         PLAYWRIGHT_IMAGE_TAG: ${PLAYWRIGHT_IMAGE_TAG:-v1.58.2-noble}
     environment:
       AI_PROVIDER: ${AI_PROVIDER:-openai}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      OPENAI_MODEL: ${OPENAI_MODEL:-o4-mini}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-5.1-codex}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com/v1}
       OPENAI_TEMPERATURE: ${OPENAI_TEMPERATURE:-0.7}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-5}
       ANTHROPIC_TEMPERATURE: ${ANTHROPIC_TEMPERATURE:-0.7}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GOOGLE_GENERATIVE_AI_API_KEY: ${GOOGLE_GENERATIVE_AI_API_KEY:-}
-      GOOGLE_GENERATIVE_AI_MODEL: ${GOOGLE_GENERATIVE_AI_MODEL:-gemini-2.5-pro}
+      GOOGLE_GENERATIVE_AI_MODEL: ${GOOGLE_GENERATIVE_AI_MODEL:-gemini-3-pro-preview}
       GOOGLE_GENERATIVE_AI_TEMPERATURE: ${GOOGLE_GENERATIVE_AI_TEMPERATURE:-0.7}
       AGENT_NAME: ${AGENT_NAME:-Claw}
       SOUL_FILE: ${SOUL_FILE:-default.soul.md}
       CONFIRMATION_MODE: ${CONFIRMATION_MODE:-suggest}
-      AGENT_STORAGE_PATH: ${AGENT_STORAGE_PATH:-/home/openclaw/.openclaw/storage/agent.json}
-      SQLITE_DB_PATH: ${SQLITE_DB_PATH:-/home/openclaw/.openclaw/storage/memory.db}
-      BROWSER_PROFILE_PATH: ${BROWSER_PROFILE_PATH:-/home/openclaw/.openclaw/browser-profile}
+      OPENCLAW_STATE_DIR: ${OPENCLAW_STATE_DIR:-/home/openclaw/.openclaw}
+      OPENCLAW_CONFIG_PATH: ${OPENCLAW_CONFIG_PATH:-/home/openclaw/.openclaw/openclaw.json}
+      BROWSER_DEFAULT_PROFILE: ${BROWSER_DEFAULT_PROFILE:-openclaw}
+      BROWSER_HEADLESS: ${BROWSER_HEADLESS:-true}
+      BROWSER_NO_SANDBOX: ${BROWSER_NO_SANDBOX:-true}
+      BROWSER_EXECUTABLE_PATH: ${BROWSER_EXECUTABLE_PATH:-}
+      BROWSER_PROFILE_PATH: ${BROWSER_PROFILE_PATH:-/home/openclaw/.openclaw/browser/default/user-data}
       WORKSPACE_PATH: ${WORKSPACE_PATH:-/home/openclaw/.openclaw/workspace}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_ALLOWED_USER_IDS: ${TELEGRAM_ALLOWED_USER_IDS:-}
@@ -33,9 +37,13 @@ services:
       DISCORD_ALLOWED_USER_IDS: ${DISCORD_ALLOWED_USER_IDS:-}
       NODE_ENV: ${NODE_ENV:-production}
     volumes:
-      - ./data/storage:/home/openclaw/.openclaw/storage
-      - ./data/browser:/home/openclaw/.openclaw/browser-profile
+      - ./data/storage:/home/openclaw/.openclaw
+      - ./data/browser:/home/openclaw/.openclaw/browser
       - ./workspace:/home/openclaw/.openclaw/workspace
     stdin_open: true
     tty: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     restart: unless-stopped

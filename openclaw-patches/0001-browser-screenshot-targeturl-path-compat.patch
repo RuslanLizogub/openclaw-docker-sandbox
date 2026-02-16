@@ -1,0 +1,154 @@
+diff --git a/src/agents/tools/browser-tool.schema.ts b/src/agents/tools/browser-tool.schema.ts
+index 8caa3fc..6c1fb0d 100644
+--- a/src/agents/tools/browser-tool.schema.ts
++++ b/src/agents/tools/browser-tool.schema.ts
+@@ -90,6 +90,7 @@ export const BrowserToolSchema = Type.Object({
+   labels: Type.Optional(Type.Boolean()),
+   fullPage: Type.Optional(Type.Boolean()),
+   ref: Type.Optional(Type.String()),
++  path: Type.Optional(Type.String()),
+   element: Type.Optional(Type.String()),
+   type: optionalStringEnum(BROWSER_IMAGE_TYPES),
+   level: Type.Optional(Type.String()),
+diff --git a/src/agents/tools/browser-tool.ts b/src/agents/tools/browser-tool.ts
+index e6f4db3..79fe2ed 100644
+--- a/src/agents/tools/browser-tool.ts
++++ b/src/agents/tools/browser-tool.ts
+@@ -1,4 +1,6 @@
+ import crypto from "node:crypto";
++import fs from "node:fs/promises";
++import path from "node:path";
+ import {
+   browserAct,
+   browserArmDialog,
+@@ -215,6 +217,38 @@ function resolveBrowserBaseUrl(params: {
+   return undefined;
+ }
+ 
++function resolveWorkspaceRoot(): string | null {
++  const cfg = loadConfig();
++  const workspace = cfg.agents?.defaults?.workspace;
++  if (typeof workspace !== "string") {
++    return null;
++  }
++  const trimmed = workspace.trim();
++  if (!trimmed) {
++    return null;
++  }
++  return path.resolve(trimmed);
++}
++
++function resolveScreenshotOutputPath(requestedPath: string): string {
++  const trimmed = requestedPath.trim();
++  if (!trimmed) {
++    throw new Error("Screenshot path cannot be empty.");
++  }
++  const absolutePath = path.resolve(trimmed);
++  const workspaceRoot = resolveWorkspaceRoot();
++  if (!workspaceRoot) {
++    return absolutePath;
++  }
++  const relative = path.relative(workspaceRoot, absolutePath);
++  const insideWorkspace = relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
++  if (!insideWorkspace) {
++    throw new Error(`Screenshot path must be inside workspace (${workspaceRoot}).`);
++  }
++  return absolutePath;
++}
++
++async function persistScreenshotCopy(sourcePath: string, requestedPath: string) {
++  const absoluteOutputPath = resolveScreenshotOutputPath(requestedPath);
++  await fs.mkdir(path.dirname(absoluteOutputPath), { recursive: true });
++  await fs.copyFile(sourcePath, absoluteOutputPath);
++  return absoluteOutputPath;
++}
++
+ export function createBrowserTool(opts?: {
+   sandboxBridgeUrl?: string;
+   allowHostControl?: boolean;
+@@ -596,6 +631,46 @@ export function createBrowserTool(opts?: {
+           const fullPage = Boolean(params.fullPage);
+           const ref = readStringParam(params, "ref");
+           const element = readStringParam(params, "element");
++          const targetUrl = readStringParam(params, "targetUrl");
++          const outputPath = readStringParam(params, "path");
++          let effectiveTargetId = targetId;
++
++          if (targetUrl) {
++            if (targetId) {
++              if (proxyRequest) {
++                await proxyRequest({
++                  method: "POST",
++                  path: "/navigate",
++                  profile,
++                  body: {
++                    url: targetUrl,
++                    targetId,
++                  },
++                });
++              } else {
++                await browserNavigate(baseUrl, {
++                  url: targetUrl,
++                  targetId,
++                  profile,
++                });
++              }
++            } else {
++              const opened = proxyRequest
++                ? await proxyRequest({
++                    method: "POST",
++                    path: "/tabs/open",
++                    profile,
++                    body: { url: targetUrl },
++                  })
++                : await browserOpenTab(baseUrl, targetUrl, { profile });
++              const openedTargetId =
++                typeof opened === "object" &&
++                opened !== null &&
++                typeof (opened as { targetId?: unknown }).targetId === "string"
++                  ? (opened as { targetId: string }).targetId
++                  : undefined;
++              if (openedTargetId) {
++                effectiveTargetId = openedTargetId;
++              }
++            }
++          }
+           const type = params.type === "jpeg" ? "jpeg" : "png";
+           const result = proxyRequest
+             ? ((await proxyRequest({
+@@ -603,7 +678,7 @@ export function createBrowserTool(opts?: {
+                 path: "/screenshot",
+                 profile,
+                 body: {
+-                  targetId,
++                  targetId: effectiveTargetId,
+                   fullPage,
+                   ref,
+                   element,
+@@ -611,12 +686,18 @@ export function createBrowserTool(opts?: {
+                 },
+               })) as Awaited<ReturnType<typeof browserScreenshotAction>>)
+             : await browserScreenshotAction(baseUrl, {
+-                targetId,
++                targetId: effectiveTargetId,
+                 fullPage,
+                 ref,
+                 element,
+                 type,
+                 profile,
+               });
++          const savedPath = outputPath ? await persistScreenshotCopy(result.path, outputPath) : undefined;
++          const details = savedPath
++            ? {
++                ...result,
++                savedPath,
++              }
++            : result;
+           return await imageResultFromFile({
+             label: "browser:screenshot",
+             path: result.path,
+-            details: result,
++            details,
+           });
+         }
+         case "navigate": {
