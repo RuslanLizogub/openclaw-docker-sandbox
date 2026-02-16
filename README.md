@@ -151,6 +151,18 @@ Show logs:
 docker compose logs -f openclaw
 ```
 
+Stop all services (keep data volumes and bind-mounted data):
+
+```bash
+docker compose down
+```
+
+Stop all services and remove compose-managed volumes/networks:
+
+```bash
+docker compose down --volumes --remove-orphans
+```
+
 Restart service:
 
 ```bash
