@@ -1,0 +1,13 @@
+# Local environment secrets
+.env
+.env.local
+.env.*.local
+
+# Persistent runtime data
+data/
+workspace/
+
+# OS / editor junk
+.DS_Store
+*.swp
+*.swo
