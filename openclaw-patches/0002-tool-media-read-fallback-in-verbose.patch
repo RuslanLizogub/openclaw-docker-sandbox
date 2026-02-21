@@ -1,0 +1,155 @@
+diff --git a/src/agents/pi-embedded-subscribe.handlers.tools.ts b/src/agents/pi-embedded-subscribe.handlers.tools.ts
+index 31c9e6f..73f6c1d 100644
+--- a/src/agents/pi-embedded-subscribe.handlers.tools.ts
++++ b/src/agents/pi-embedded-subscribe.handlers.tools.ts
+@@ -55,6 +55,19 @@ function extendExecMeta(toolName: string, args: unknown, meta?: string): string
+   return meta ? `${meta} · ${suffix}` : suffix;
+ }
+ 
++function extractReadPathFromArgs(args: unknown): string {
++  if (!args || typeof args !== "object") {
++    return "";
++  }
++  const record = args as Record<string, unknown>;
++  const value =
++    typeof record.path === "string"
++      ? record.path
++      : typeof record.file_path === "string"
++        ? record.file_path
++        : "";
++  return value.trim();
++}
++
+ export async function handleToolExecutionStart(
+   ctx: EmbeddedPiSubscribeContext,
+   evt: AgentEvent & { toolName: string; toolCallId: string; args: unknown },
+@@ -74,13 +87,7 @@ export async function handleToolExecutionStart(
+   toolStartData.set(toolCallId, { startTime: Date.now(), args });
+ 
+   if (toolName === "read") {
+-    const record = args && typeof args === "object" ? (args as Record<string, unknown>) : {};
+-    const filePathValue =
+-      typeof record.path === "string"
+-        ? record.path
+-        : typeof record.file_path === "string"
+-          ? record.file_path
+-          : "";
+-    const filePath = filePathValue.trim();
++    const filePath = extractReadPathFromArgs(args);
+     if (!filePath) {
+       const argsPreview = typeof args === "string" ? args.slice(0, 200) : undefined;
+       ctx.log.warn(
+@@ -266,20 +273,53 @@ export async function handleToolExecutionEnd(
+     `embedded run tool end: runId=${ctx.params.runId} tool=${toolName} toolCallId=${toolCallId}`,
+   );
+ 
+-  if (ctx.params.onToolResult && ctx.shouldEmitToolOutput()) {
+-    const outputText = extractToolResultText(sanitizedResult);
+-    if (outputText) {
+-      ctx.emitToolOutput(toolName, meta, outputText);
+-    }
++  const outputText = extractToolResultText(sanitizedResult);
++  if (ctx.params.onToolResult && ctx.shouldEmitToolOutput() && outputText) {
++    ctx.emitToolOutput(toolName, meta, outputText);
+   }
+ 
+-  // Deliver media from tool results when the verbose emitToolOutput path is off.
+-  // When shouldEmitToolOutput() is true, emitToolOutput already delivers media
+-  // via parseReplyDirectives (MEDIA: text extraction), so skip to avoid duplicates.
+-  if (ctx.params.onToolResult && !isToolError && !ctx.shouldEmitToolOutput()) {
+-    const mediaPaths = extractToolResultMediaPaths(result);
+-    if (mediaPaths.length > 0) {
+-      try {
+-        void ctx.params.onToolResult({ mediaUrls: mediaPaths });
+-      } catch {
+-        // ignore delivery failures
+-      }
++  let mediaPaths = !isToolError ? extractToolResultMediaPaths(result) : [];
++
++  // read(image) returns inline base64 without MEDIA:path or details.path.
++  // In verbose mode that means emitToolOutput has nothing to parse, so media
++  // never reaches the channel unless we recover it from read args.
++  if (mediaPaths.length === 0 && !isToolError && toolName === "read") {
++    const hasImageContent = Boolean(
++      result &&
++        typeof result === "object" &&
++        Array.isArray((result as { content?: unknown }).content) &&
++        (result as { content: unknown[] }).content.some(
++          (item) =>
++            item && typeof item === "object" && (item as { type?: unknown }).type === "image",
++        ),
++    );
++    if (hasImageContent) {
++      const readPath = extractReadPathFromArgs(toolStartData.get(toolCallId)?.args);
++      if (readPath) {
++        mediaPaths = [readPath];
++      }
++    }
++  }
++
++  const shouldBypassVerboseMediaGuard =
++    toolName === "read" &&
++    mediaPaths.length > 0 &&
++    !Boolean(outputText && /\bMEDIA\s*:/.test(outputText));
++
++  // Normally verbose mode emits tool output text and parses MEDIA: directives,
++  // so we avoid double-sending media there. Exception: read(image) fallback.
++  if (
++    ctx.params.onToolResult &&
++    !isToolError &&
++    mediaPaths.length > 0 &&
++    (!ctx.shouldEmitToolOutput() || shouldBypassVerboseMediaGuard)
++  ) {
++    try {
++      void ctx.params.onToolResult({ mediaUrls: mediaPaths });
++    } catch {
++      // ignore delivery failures
+     }
+   }
+ 
+diff --git a/src/agents/pi-embedded-subscribe.handlers.tools.media.test.ts b/src/agents/pi-embedded-subscribe.handlers.tools.media.test.ts
+index 61bf56d..fe2b63b 100644
+--- a/src/agents/pi-embedded-subscribe.handlers.tools.media.test.ts
++++ b/src/agents/pi-embedded-subscribe.handlers.tools.media.test.ts
+@@ -127,6 +127,39 @@ describe("handleToolExecutionEnd media emission", () => {
+     expect(directMediaCalls).toHaveLength(0);
+   });
+ 
++  it("emits media for read image fallback even when verbose is full", async () => {
++    const onToolResult = vi.fn();
++    const ctx = createMockContext({ shouldEmitToolOutput: true, onToolResult });
++
++    await handleToolExecutionStart(ctx, {
++      type: "tool_execution_start",
++      toolName: "read",
++      toolCallId: "tc-read",
++      args: { file_path: "/tmp/from-read.png" },
++    });
++
++    await handleToolExecutionEnd(ctx, {
++      type: "tool_execution_end",
++      toolName: "read",
++      toolCallId: "tc-read",
++      isError: false,
++      result: {
++        content: [
++          { type: "text", text: "Read image file [image/png]" },
++          { type: "image", data: "base64", mimeType: "image/png" },
++        ],
++      },
++    });
++
++    expect(ctx.emitToolOutput).toHaveBeenCalled();
++    const directMediaCalls = onToolResult.mock.calls.filter(
++      (call: unknown[]) =>
++        call[0] &&
++        typeof call[0] === "object" &&
++        "mediaUrls" in (call[0] as Record<string, unknown>) &&
++        !("text" in (call[0] as Record<string, unknown>)),
++    );
++    expect(directMediaCalls).toEqual([[{ mediaUrls: ["/tmp/from-read.png"] }]]);
++  });
++
+   it("does NOT emit media for error results", async () => {
+     const onToolResult = vi.fn();
+     const ctx = createMockContext({ shouldEmitToolOutput: false, onToolResult });

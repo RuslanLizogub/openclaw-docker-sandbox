@@ -1,0 +1,98 @@
+diff --git a/src/agents/tools/browser-tool.node-fallback.test.ts b/src/agents/tools/browser-tool.node-fallback.test.ts
+index 84cf11e..327abde 100644
+--- a/src/agents/tools/browser-tool.node-fallback.test.ts
++++ b/src/agents/tools/browser-tool.node-fallback.test.ts
+@@ -104,6 +104,22 @@ describe("browser tool node target fallback", () => {
+     expect(gatewayMocks.callGatewayTool).not.toHaveBeenCalled();
+   });
+ 
++  it("accepts url alias for open action", async () => {
++    nodesUtilsMocks.listNodes.mockResolvedValue([]);
++    const tool = createBrowserTool();
++
++    await tool.execute?.(null, {
++      action: "open",
++      url: "https://example.com",
++    });
++
++    expect(browserClientMocks.browserOpenTab).toHaveBeenCalledWith(
++      undefined,
++      "https://example.com",
++      expect.objectContaining({ profile: undefined }),
++    );
++  });
++
+   it("keeps explicit node pin strict when node id is requested", async () => {
+     nodesUtilsMocks.listNodes.mockResolvedValue([]);
+     const tool = createBrowserTool();
+diff --git a/src/agents/tools/browser-tool.schema.ts b/src/agents/tools/browser-tool.schema.ts
+index bf22bea..e96166d 100644
+--- a/src/agents/tools/browser-tool.schema.ts
++++ b/src/agents/tools/browser-tool.schema.ts
+@@ -86,6 +86,7 @@ export const BrowserToolSchema = Type.Object({
+   node: Type.Optional(Type.String()),
+   profile: Type.Optional(Type.String()),
+   targetUrl: Type.Optional(Type.String()),
++  url: Type.Optional(Type.String()),
+   targetId: Type.Optional(Type.String()),
+   limit: Type.Optional(Type.Number()),
+   maxChars: Type.Optional(Type.Number()),
+diff --git a/src/agents/tools/browser-tool.ts b/src/agents/tools/browser-tool.ts
+index 4ac6412..7b60135 100644
+--- a/src/agents/tools/browser-tool.ts
++++ b/src/agents/tools/browser-tool.ts
+@@ -220,6 +220,23 @@ function resolveBrowserBaseUrl(params: {
+   return undefined;
+ }
+ 
++function readTargetUrlOptional(params: Record<string, unknown>): string | undefined {
++  const targetUrl = readStringParam(params, "targetUrl");
++  if (targetUrl) {
++    return targetUrl;
++  }
++  const legacyUrl = readStringParam(params, "url");
++  return legacyUrl || undefined;
++}
++
++function readTargetUrlRequired(params: Record<string, unknown>): string {
++  const targetUrl = readTargetUrlOptional(params);
++  if (!targetUrl) {
++    throw new Error("targetUrl required");
++  }
++  return targetUrl;
++}
++
+ function resolveWorkspaceRoot(): string | null {
+   const cfg = loadConfig();
+   const workspace = cfg.agents?.defaults?.workspace;
+@@ -422,9 +439,7 @@ export function createBrowserTool(opts?: {
+             };
+           }
+         case "open": {
+-          const targetUrl = readStringParam(params, "targetUrl", {
+-            required: true,
+-          });
++          const targetUrl = readTargetUrlRequired(params);
+           if (proxyRequest) {
+             const result = await proxyRequest({
+               method: "POST",
+@@ -623,7 +638,7 @@ export function createBrowserTool(opts?: {
+           const fullPage = Boolean(params.fullPage);
+           const ref = readStringParam(params, "ref");
+           const element = readStringParam(params, "element");
+-          const targetUrl = readStringParam(params, "targetUrl");
++          const targetUrl = readTargetUrlOptional(params);
+           const outputPath = readStringParam(params, "path");
+           let effectiveTargetId = targetId;
+ 
+@@ -702,9 +717,7 @@ export function createBrowserTool(opts?: {
+           });
+         }
+         case "navigate": {
+-          const targetUrl = readStringParam(params, "targetUrl", {
+-            required: true,
+-          });
++          const targetUrl = readTargetUrlRequired(params);
+           const targetId = readStringParam(params, "targetId");
+           if (proxyRequest) {
+             const result = await proxyRequest({

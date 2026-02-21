@@ -1,0 +1,48 @@
+# Progress
+
+- Added separate LM Studio env example.
+- Added zero-state cleanup script for Docker runtime data.
+- Updated docs for dual-mode startup.
+- Added media delivery patches:
+  - browser `savedPath` preference
+  - media dedupe in subscribe/tool handlers
+  - run-scope dedupe retention (no reset-time clear)
+- Added Telegram media fallback patch:
+  - `sendPhoto` -> `sendDocument` retry on `PHOTO_INVALID_DIMENSIONS`
+- Added top-level `tests/` with baseline checks and optional Docker integration check.
+- Added reset-state flow test (destructive, opt-in): verifies container restart and writable `workspace/screenshots`.
+- Added browser node-target fallback patch:
+  - when `target=node` and no connected nodes, fallback to local browser service
+  - explicit `node=<id>` remains strict and fails fast if unavailable
+- Added browser fallback unit test patch: `src/agents/tools/browser-tool.node-fallback.test.ts`
+- Added dependency security overrides patch:
+  - `fast-xml-parser` -> `5.3.6`
+  - `tar` -> `7.5.9`
+  - `minimatch` -> `10.2.1`
+- Added browser URL compatibility patch:
+  - new patch `openclaw-patches/0008-browser-url-alias-compat.patch`
+  - browser tool now accepts `url` alias for `open`/`navigate`/`screenshot` URL input
+  - added unit test for `open` with `url` field
+- Added Telegram final delivery dedupe patch:
+  - new patch `openclaw-patches/0009-telegram-media-delivery-dedupe.patch`
+  - `deliverReplies()` now dedupes media across reply blocks and normalizes `file://` local URLs
+  - added `delivery.test.ts` coverage for duplicate URL and `path` + `file://path` cases
+- Added tmpdir hardening for restart stability:
+  - docker runtime now exports `TMPDIR` from `OPENCLAW_TMPDIR`
+  - default temp path moved to `/home/openclaw/.openclaw/tmp` (state volume)
+- Updated test orchestration:
+  - `tests/run-all.sh` now runs reset/build flow before Docker integration checks
+  - reset flow and Docker integration both run browser fallback tests in-container
+  - added `tests/test_dependency_security_patch.sh`
+  - docker integration now includes `pnpm audit --prod --audit-level high`
+  - added `tests/test_browser_url_alias_patch.sh`
+  - added `tests/test_tmpdir_runtime_config.sh`
+  - added `tests/test_telegram_media_delivery_dedupe_patch.sh`
+- Manual Telegram e2e (after `reset-state` + `up --build`) succeeded:
+  - browser no longer fails with `No connected browser-capable nodes`
+  - screenshot file created at `workspace/screenshots/manual-e2e.png` (valid PNG)
+- Final security review pass completed:
+  - no API keys/tokens/private keys found in tracked files or git patch history
+  - `workspace/` and `data/` are ignored and not tracked
+  - documented commit metadata privacy check in README release checklist
+  - ran dependency audit in container (`pnpm audit --prod --audit-level high`): `high=0`, `critical=0`

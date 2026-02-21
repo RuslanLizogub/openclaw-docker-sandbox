@@ -1,0 +1,22 @@
+# Errors
+
+- `Unknown model: ...` from OpenClaw when LM Studio model id is not mapped to OpenClaw expected format.
+- `models.providers.openai.models ... expected array` when config is partially written or stale.
+- Token/context overflow on local model with large accumulated prompt history.
+- Duplicate screenshot in Telegram when media paths are emitted from multiple stages without run-level dedupe.
+- Duplicate screenshot may still happen if the same media reaches Telegram delivery as mixed forms (`/path/file.png` and `file:///path/file.png`) without delivery-level normalization/dedupe.
+- `sendPhoto` may fail with `PHOTO_INVALID_DIMENSIONS`; without fallback this can drop screenshot delivery.
+- Browser tool may fail with `No connected browser-capable nodes.` when model emits `target=node` in single-container setup.
+- Browser tool may fail with `targetUrl required` when model sends `url` field or omits URL in `open`/`navigate` calls.
+- Bot self-sent Telegram messages are not valid inbound triggers for agent run verification.
+- Model may briefly call `write` with placeholder content for requested screenshot path, then self-correct via `exec cp` from browser media path.
+- Commit metadata may expose personal email/name even when file content has no secrets.
+- Gateway may fail to start with `ENOSPC: no space left on device, mkdir '/tmp/openclaw-10001'` when Docker `/tmp` is exhausted.
+- Docker image build may fail with `ERR_PNPM_ENOSPC` when Docker Desktop storage/build cache is full; recover with `docker image prune -a -f` and `docker builder prune -af`.
+- Dependency audit baseline (2026-02-21, before patch `0007`) had:
+  - `fast-xml-parser` via AWS SDK chain (`critical` + `high`)
+  - `minimatch` (`high`)
+  - `tar` (`high`)
+- Dependency audit after patch `0007`:
+  - `high=0`, `critical=0`
+  - residual: `low=1` (`hono`), `moderate=2` (`request`, `ajv`) via transitive deps.

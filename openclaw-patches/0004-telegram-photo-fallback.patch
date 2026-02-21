@@ -1,0 +1,102 @@
+diff --git a/src/telegram/bot/delivery.ts b/src/telegram/bot/delivery.ts
+--- a/src/telegram/bot/delivery.ts
++++ b/src/telegram/bot/delivery.ts
+@@ -32,6 +32,7 @@ import {
+ const PARSE_ERR_RE = /can't parse entities|parse entities|find end of the entity/i;
+ const VOICE_FORBIDDEN_RE = /VOICE_MESSAGES_FORBIDDEN/;
++const PHOTO_INVALID_DIMENSIONS_RE = /PHOTO_INVALID_DIMENSIONS/;
+ 
+ export async function deliverReplies(params: {
+   replies: ReplyPayload[];
+@@ -185,12 +186,27 @@ export async function deliverReplies(params: {
+         });
+         markDelivered();
+       } else if (kind === "image") {
+-        await withTelegramApiErrorLogging({
+-          operation: "sendPhoto",
+-          runtime,
+-          fn: () => bot.api.sendPhoto(chatId, file, { ...mediaParams }),
+-        });
+-        markDelivered();
++        try {
++          await withTelegramApiErrorLogging({
++            operation: "sendPhoto",
++            runtime,
++            fn: () => bot.api.sendPhoto(chatId, file, { ...mediaParams }),
++          });
++          markDelivered();
++        } catch (photoErr) {
++          if (!isPhotoInvalidDimensions(photoErr)) {
++            throw photoErr;
++          }
++          logVerbose(
++            "telegram sendPhoto rejected PHOTO_INVALID_DIMENSIONS; retrying as sendDocument",
++          );
++          await withTelegramApiErrorLogging({
++            operation: "sendDocument",
++            runtime,
++            fn: () => bot.api.sendDocument(chatId, file, { ...mediaParams }),
++          });
++          markDelivered();
++        }
+       } else if (kind === "video") {
+         await withTelegramApiErrorLogging({
+           operation: "sendVideo",
+@@ -447,6 +463,13 @@ function isVoiceMessagesForbidden(err: unknown): boolean {
+   return VOICE_FORBIDDEN_RE.test(formatErrorMessage(err));
+ }
+ 
++function isPhotoInvalidDimensions(err: unknown): boolean {
++  if (err instanceof GrammyError) {
++    return PHOTO_INVALID_DIMENSIONS_RE.test(err.description);
++  }
++  return PHOTO_INVALID_DIMENSIONS_RE.test(formatErrorMessage(err));
++}
++
+ async function sendTelegramVoiceFallbackText(opts: {
+   bot: Bot;
+   chatId: string;
+diff --git a/src/telegram/bot/delivery.test.ts b/src/telegram/bot/delivery.test.ts
+--- a/src/telegram/bot/delivery.test.ts
++++ b/src/telegram/bot/delivery.test.ts
+@@ -103,6 +103,35 @@ describe("deliverReplies", () => {
+     );
+   });
+ 
++  it("falls back to sendDocument when sendPhoto fails with PHOTO_INVALID_DIMENSIONS", async () => {
++    const runtime = { error: vi.fn(), log: vi.fn() };
++    const sendPhoto = vi
++      .fn()
++      .mockRejectedValue(
++        new Error(
++          "GrammyError: Call to 'sendPhoto' failed! (400: Bad Request: PHOTO_INVALID_DIMENSIONS)",
++        ),
++      );
++    const sendDocument = vi.fn().mockResolvedValue({
++      message_id: 13,
++      chat: { id: "123" },
++    });
++    const bot = { api: { sendPhoto, sendDocument } } as unknown as Bot;
++
++    loadWebMedia.mockResolvedValueOnce({
++      buffer: Buffer.from("image"),
++      contentType: "image/jpeg",
++      fileName: "photo.jpg",
++    });
++
++    await deliverReplies({
++      replies: [{ mediaUrl: "https://example.com/photo.jpg", text: "image fallback" }],
++      chatId: "123",
++      token: "tok",
++      runtime,
++      bot,
++      replyToMode: "off",
++      textLimit: 4000,
++    });
++    expect(sendPhoto).toHaveBeenCalledTimes(1);
++    expect(sendDocument).toHaveBeenCalledTimes(1);
++  });
++
+   it("passes mediaLocalRoots to media loading", async () => {
+     const runtime = { error: vi.fn(), log: vi.fn() };
+     const sendPhoto = vi.fn().mockResolvedValue({

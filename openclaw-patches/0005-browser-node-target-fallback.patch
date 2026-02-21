@@ -1,0 +1,13 @@
+diff --git a/src/agents/tools/browser-tool.ts b/src/agents/tools/browser-tool.ts
+index 49b3985..4ac6412 100644
+--- a/src/agents/tools/browser-tool.ts
++++ b/src/agents/tools/browser-tool.ts
+@@ -107,7 +107,7 @@ async function resolveBrowserNodeTarget(params: {
+   const nodes = await listNodes({});
+   const browserNodes = nodes.filter((node) => node.connected && isBrowserNode(node));
+   if (browserNodes.length === 0) {
+-    if (params.target === "node" || params.requestedNode) {
++    if (params.requestedNode) {
+       throw new Error("No connected browser-capable nodes.");
+     }
+     return null;

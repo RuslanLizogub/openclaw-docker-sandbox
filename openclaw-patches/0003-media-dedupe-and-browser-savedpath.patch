@@ -1,0 +1,343 @@
+diff --git a/src/agents/pi-embedded-subscribe.handlers.types.ts b/src/agents/pi-embedded-subscribe.handlers.types.ts
+index 93df45a..4f39b5a 100644
+--- a/src/agents/pi-embedded-subscribe.handlers.types.ts
++++ b/src/agents/pi-embedded-subscribe.handlers.types.ts
+@@ -72,6 +72,7 @@ export type EmbeddedPiSubscribeState = {
+   messagingToolSentTargets: MessagingToolSend[];
+   pendingMessagingTexts: Map<string, string>;
+   pendingMessagingTargets: Map<string, MessagingToolSend>;
++  emittedMediaUrlsNormalized: Set<string>;
+   lastAssistant?: AgentMessage;
+ };
+ 
+diff --git a/src/agents/pi-embedded-subscribe.ts b/src/agents/pi-embedded-subscribe.ts
+index 2437803..a1c0f00 100644
+--- a/src/agents/pi-embedded-subscribe.ts
++++ b/src/agents/pi-embedded-subscribe.ts
+@@ -73,6 +73,7 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
+     messagingToolSentTargets: [],
+     pendingMessagingTexts: new Map(),
+     pendingMessagingTargets: new Map(),
++    emittedMediaUrlsNormalized: new Set(),
+   };
+   const usageTotals = {
+     input: 0,
+@@ -92,6 +93,7 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
+   const messagingToolSentTargets = state.messagingToolSentTargets;
+   const pendingMessagingTexts = state.pendingMessagingTexts;
+   const pendingMessagingTargets = state.pendingMessagingTargets;
++  const emittedMediaUrlsNormalized = state.emittedMediaUrlsNormalized;
+   const replyDirectiveAccumulator = createStreamingDirectiveAccumulator();
+   const partialReplyDirectiveAccumulator = createStreamingDirectiveAccumulator();
+ 
+@@ -117,6 +119,6 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
+     state.assistantMessageIndex += 1;
+     state.lastAssistantTextMessageIndex = -1;
+     state.lastAssistantTextNormalized = undefined;
+     state.lastAssistantTextTrimmed = undefined;
+     state.assistantTextBaseline = nextAssistantTextBaseline;
+   };
+@@ -305,6 +308,46 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
+     }
+     return `\`\`\`txt\n${trimmed}\n\`\`\``;
+   };
++  const dedupeMediaUrlsForAssistantMessage = (mediaUrls?: string[]) => {
++    if (!mediaUrls || mediaUrls.length === 0) {
++      return undefined;
++    }
++    const deduped: string[] = [];
++    for (const raw of mediaUrls) {
++      if (typeof raw !== "string") {
++        continue;
++      }
++      const normalized = raw.trim();
++      if (!normalized) {
++        continue;
++      }
++      if (emittedMediaUrlsNormalized.has(normalized)) {
++        continue;
++      }
++      emittedMediaUrlsNormalized.add(normalized);
++      deduped.push(normalized);
++    }
++    return deduped.length > 0 ? deduped : undefined;
++  };
++  const dedupeParsedReplyMedia = (
++    parsed: ReturnType<typeof parseReplyDirectives> | null,
++  ): ReturnType<typeof parseReplyDirectives> | null => {
++    if (!parsed || !parsed.mediaUrls || parsed.mediaUrls.length === 0) {
++      return parsed;
++    }
++    const dedupedMediaUrls = dedupeMediaUrlsForAssistantMessage(parsed.mediaUrls);
++    if (
++      dedupedMediaUrls &&
++      dedupedMediaUrls.length === parsed.mediaUrls.length &&
++      dedupedMediaUrls.every((value, index) => value === parsed.mediaUrls?.[index])
++    ) {
++      return parsed;
++    }
++    return {
++      ...parsed,
++      mediaUrls: dedupedMediaUrls,
++      mediaUrl: dedupedMediaUrls?.[0],
++    };
++  };
+   const emitToolSummary = (toolName?: string, meta?: string) => {
+     if (!params.onToolResult) {
+       return;
+@@ -312,8 +355,9 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
+     const agg = formatToolAggregate(toolName, meta ? [meta] : undefined, {
+       markdown: useMarkdown,
+     });
+-    const { text: cleanedText, mediaUrls } = parseReplyDirectives(agg);
+-    if (!cleanedText && (!mediaUrls || mediaUrls.length === 0)) {
++    const parsed = dedupeParsedReplyMedia(parseReplyDirectives(agg));
++    const { text: cleanedText, mediaUrls } = parsed ?? { text: "", mediaUrls: undefined };
++    if (!parsed || (!cleanedText && (!mediaUrls || mediaUrls.length === 0))) {
+       return;
+     }
+     try {
+@@ -333,8 +377,9 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
+       markdown: useMarkdown,
+     });
+     const message = `${agg}\n${formatToolOutputBlock(output)}`;
+-    const { text: cleanedText, mediaUrls } = parseReplyDirectives(message);
+-    if (!cleanedText && (!mediaUrls || mediaUrls.length === 0)) {
++    const parsed = dedupeParsedReplyMedia(parseReplyDirectives(message));
++    const { text: cleanedText, mediaUrls } = parsed ?? { text: "", mediaUrls: undefined };
++    if (!parsed || (!cleanedText && (!mediaUrls || mediaUrls.length === 0))) {
+       return;
+     }
+     try {
+@@ -489,7 +534,7 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
+     if (!params.onBlockReply) {
+       return;
+     }
+-    const splitResult = replyDirectiveAccumulator.consume(chunk);
++    const splitResult = dedupeParsedReplyMedia(replyDirectiveAccumulator.consume(chunk));
+     if (!splitResult) {
+       return;
+     }
+@@ -516,9 +561,11 @@ export function subscribeEmbeddedPiSession(params: SubscribeEmbeddedPiSessionPar
+     });
+   };
+ 
+-  const consumeReplyDirectives = (text: string, options?: { final?: boolean }) =>
+-    replyDirectiveAccumulator.consume(text, options);
+-  const consumePartialReplyDirectives = (text: string, options?: { final?: boolean }) =>
+-    partialReplyDirectiveAccumulator.consume(text, options);
++  const consumeReplyDirectives = (text: string, options?: { final?: boolean }) => {
++    return dedupeParsedReplyMedia(replyDirectiveAccumulator.consume(text, options));
++  };
++  const consumePartialReplyDirectives = (text: string, options?: { final?: boolean }) => {
++    return dedupeParsedReplyMedia(partialReplyDirectiveAccumulator.consume(text, options));
++  };
+ 
+   const flushBlockReplyBuffer = () => {
+     if (!params.onBlockReply) {
+diff --git a/src/agents/pi-embedded-subscribe.tools.ts b/src/agents/pi-embedded-subscribe.tools.ts
+index 4f56d2b..a3c83d7 100644
+--- a/src/agents/pi-embedded-subscribe.tools.ts
++++ b/src/agents/pi-embedded-subscribe.tools.ts
+@@ -123,11 +123,11 @@ export function extractToolResultText(result: unknown): string | undefined {
+  * Extract media file paths from a tool result.
+  *
+  * Strategy (first match wins):
+- * 1. Parse `MEDIA:` tokens from text content blocks (all OpenClaw tools).
+- * 2. Fall back to `details.path` when image content exists (OpenClaw imageResult).
++ * 1. Use `details.savedPath` when available (browser screenshot persisted to workspace).
++ * 2. Parse `MEDIA:` tokens from text content blocks (all OpenClaw tools).
++ * 3. Fall back to `details.path` when image content exists (OpenClaw imageResult).
+  *
+  * Returns an empty array when no media is found (e.g. Pi SDK `read` tool
+- * returns base64 image data but no file path; those need a different delivery
+- * path like saving to a temp file).
++ * returns base64 image data but no file path).
+  */
+ export function extractToolResultMediaPaths(result: unknown): string[] {
+   if (!result || typeof result !== "object") {
+@@ -135,6 +135,13 @@ export function extractToolResultMediaPaths(result: unknown): string[] {
+   }
+   const record = result as Record<string, unknown>;
+   const content = Array.isArray(record.content) ? record.content : null;
++  const details = record.details as Record<string, unknown> | undefined;
++  const savedPath = typeof details?.savedPath === "string" ? details.savedPath.trim() : "";
++
++  if (savedPath) {
++    return [savedPath];
++  }
++
+   if (!content) {
+     return [];
+   }
+diff --git a/src/agents/pi-embedded-subscribe.handlers.tools.ts b/src/agents/pi-embedded-subscribe.handlers.tools.ts
+index 73f6c1d..8d9136d 100644
+--- a/src/agents/pi-embedded-subscribe.handlers.tools.ts
++++ b/src/agents/pi-embedded-subscribe.handlers.tools.ts
+@@ -69,6 +69,54 @@ function extractReadPathFromArgs(args: unknown): string {
+   return value.trim();
+ }
+ 
++function extractSavedPathFromResult(result: unknown): string {
++  if (!result || typeof result !== "object") {
++    return "";
++  }
++  const record = result as Record<string, unknown>;
++  const details =
++    record.details && typeof record.details === "object"
++      ? (record.details as Record<string, unknown>)
++      : undefined;
++  const savedPath = typeof details?.savedPath === "string" ? details.savedPath.trim() : "";
++  return savedPath;
++}
++
++function normalizeToolOutputMediaText(
++  toolName: string,
++  result: unknown,
++  outputText: string | undefined,
++): string | undefined {
++  if (!outputText) {
++    return outputText;
++  }
++  if (toolName !== "browser") {
++    return outputText;
++  }
++  const savedPath = extractSavedPathFromResult(result);
++  if (!savedPath) {
++    return outputText;
++  }
++  // Browser screenshot tool output often includes internal MEDIA path
++  // (/home/openclaw/.openclaw/media/browser/...) which causes duplicates when
++  // the final model reply also emits MEDIA:workspace_path.
++  return outputText.replace(/\bMEDIA\s*:\s*\S+/g, `MEDIA:${savedPath}`);
++}
++
++function dedupeMediaPathsForCurrentAssistantMessage(
++  ctx: EmbeddedPiSubscribeContext,
++  mediaPaths: string[],
++): string[] {
++  const deduped: string[] = [];
++  for (const raw of mediaPaths) {
++    const normalized = typeof raw === "string" ? raw.trim() : "";
++    if (!normalized) {
++      continue;
++    }
++    if (ctx.state.emittedMediaUrlsNormalized.has(normalized)) {
++      continue;
++    }
++    ctx.state.emittedMediaUrlsNormalized.add(normalized);
++    deduped.push(normalized);
++  }
++  return deduped;
++}
++
+ export async function handleToolExecutionStart(
+   ctx: EmbeddedPiSubscribeContext,
+   evt: AgentEvent & { toolName: string; toolCallId: string; args: unknown },
+@@ -273,7 +321,9 @@ export async function handleToolExecutionEnd(
+     `embedded run tool end: runId=${ctx.params.runId} tool=${toolName} toolCallId=${toolCallId}`,
+   );
+ 
+-  const outputText = extractToolResultText(sanitizedResult);
++  const outputText = normalizeToolOutputMediaText(
++    toolName,
++    result,
++    extractToolResultText(sanitizedResult),
++  );
+   if (ctx.params.onToolResult && ctx.shouldEmitToolOutput() && outputText) {
+     ctx.emitToolOutput(toolName, meta, outputText);
+   }
+@@ -315,11 +365,12 @@ export async function handleToolExecutionEnd(
+     mediaPaths.length > 0 &&
+     (!ctx.shouldEmitToolOutput() || shouldBypassVerboseMediaGuard)
+   ) {
+-    try {
+-      void ctx.params.onToolResult({ mediaUrls: mediaPaths });
+-    } catch {
+-      // ignore delivery failures
+-    }
++    const dedupedMediaPaths = dedupeMediaPathsForCurrentAssistantMessage(ctx, mediaPaths);
++    if (dedupedMediaPaths.length > 0) {
++      try {
++        void ctx.params.onToolResult({ mediaUrls: dedupedMediaPaths });
++      } catch {
++        // ignore delivery failures
++      }
++    }
+   }
+ 
+   // Run after_tool_call plugin hook (fire-and-forget)
+diff --git a/src/agents/pi-embedded-subscribe.handlers.tools.media.test.ts b/src/agents/pi-embedded-subscribe.handlers.tools.media.test.ts
+index fe2b63b..31e4409 100644
+--- a/src/agents/pi-embedded-subscribe.handlers.tools.media.test.ts
++++ b/src/agents/pi-embedded-subscribe.handlers.tools.media.test.ts
+@@ -26,6 +26,7 @@ function createMockContext(overrides?: {
+       messagingToolSentTexts: [],
+       messagingToolSentTextsNormalized: [],
+       messagingToolSentTargets: [],
++      emittedMediaUrlsNormalized: new Set(),
+     },
+     log: { debug: vi.fn(), warn: vi.fn() },
+     shouldEmitToolResult: vi.fn(() => false),
+@@ -95,6 +96,29 @@ describe("handleToolExecutionEnd media emission", () => {
+     });
+   });
+ 
++  it("prefers browser details.savedPath over internal MEDIA path", async () => {
++    const onToolResult = vi.fn();
++    const ctx = createMockContext({ shouldEmitToolOutput: false, onToolResult });
++
++    await handleToolExecutionEnd(ctx, {
++      type: "tool_execution_end",
++      toolName: "browser",
++      toolCallId: "tc-1",
++      isError: false,
++      result: {
++        content: [
++          { type: "text", text: "MEDIA:/home/openclaw/.openclaw/media/browser/internal.png" },
++          { type: "image", data: "base64", mimeType: "image/png" },
++        ],
++        details: {
++          path: "/home/openclaw/.openclaw/media/browser/internal.png",
++          savedPath: "/home/openclaw/.openclaw/workspace/screenshots/example.png",
++        },
++      },
++    });
++
++    expect(onToolResult).toHaveBeenCalledWith({
++      mediaUrls: ["/home/openclaw/.openclaw/workspace/screenshots/example.png"],
++    });
++  });
++
+   it("does NOT emit media when verbose is full (emitToolOutput handles it)", async () => {
+     const onToolResult = vi.fn();
+     const ctx = createMockContext({ shouldEmitToolOutput: true, onToolResult });
+@@ -224,4 +248,28 @@ describe("handleToolExecutionEnd media emission", () => {
+       mediaUrls: ["/tmp/canvas-output.png"],
+     });
+   });
++
++  it("does not emit duplicate direct media path within one assistant message", async () => {
++    const onToolResult = vi.fn();
++    const ctx = createMockContext({ shouldEmitToolOutput: false, onToolResult });
++    ctx.state.emittedMediaUrlsNormalized.add("/tmp/screenshot.png");
++
++    await handleToolExecutionEnd(ctx, {
++      type: "tool_execution_end",
++      toolName: "browser",
++      toolCallId: "tc-dup",
++      isError: false,
++      result: {
++        content: [
++          { type: "text", text: "MEDIA:/tmp/screenshot.png" },
++          { type: "image", data: "base64", mimeType: "image/png" },
++        ],
++        details: {
++          path: "/tmp/screenshot.png",
++        },
++      },
++    });
++
++    expect(onToolResult).not.toHaveBeenCalled();
++  });
+ });

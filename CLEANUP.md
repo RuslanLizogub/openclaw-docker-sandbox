@@ -1,27 +1,31 @@
 # Cleanup Guide
 
-Use these commands when you need to wipe persistent state (agent memory DB and browser profile).
+Use this when you need a true "zero state" reset (including stale `openclaw.json`).
 
-## Stop the sandbox
+## Recommended: one command reset
 
 ```bash
-docker compose down
+./scripts/reset-state.sh
 ```
 
-## Wipe memory and browser data
+Non-interactive variant:
 
 ```bash
-rm -rf ./data/storage/* ./data/browser/*
+./scripts/reset-state.sh --yes
 ```
 
-## (Optional) Also wipe workspace files
+The script:
+
+- stops containers (`docker compose down --volumes --remove-orphans`)
+- removes persisted runtime state from:
+  - `./data/storage/*`
+  - `./data/browser/*`
+  - `./workspace/*`
+
+## Manual fallback
 
 ```bash
-rm -rf ./workspace/*
-```
-
-## Recreate empty folders
-
-```bash
+docker compose down --volumes --remove-orphans
+rm -rf ./data/storage/* ./data/browser/* ./workspace/*
 mkdir -p ./data/storage ./data/browser ./workspace
 ```
