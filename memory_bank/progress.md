@@ -27,9 +27,16 @@
   - new patch `openclaw-patches/0009-telegram-media-delivery-dedupe.patch`
   - `deliverReplies()` now dedupes media across reply blocks and normalizes `file://` local URLs
   - added `delivery.test.ts` coverage for duplicate URL and `path` + `file://path` cases
+- Extended Telegram dedupe fix:
+  - `0009` now also covers repeated delivery calls when `replyToMode=off`
+  - dedupe TTL tuned to short anti-dup window (`30s`)
+  - added regression coverage for repeated calls with `replyToMode=off`
 - Added tmpdir hardening for restart stability:
   - docker runtime now exports `TMPDIR` from `OPENCLAW_TMPDIR`
   - default temp path moved to `/home/openclaw/.openclaw/tmp` (state volume)
+- Added entrypoint boot-loop fix:
+  - replaced `chown -R` with socket-safe ownership update (`find ... ! -type s -exec chown ...`)
+  - prevents restarts on Chromium `SingletonSocket` artifacts
 - Updated test orchestration:
   - `tests/run-all.sh` now runs reset/build flow before Docker integration checks
   - reset flow and Docker integration both run browser fallback tests in-container
@@ -38,6 +45,7 @@
   - added `tests/test_browser_url_alias_patch.sh`
   - added `tests/test_tmpdir_runtime_config.sh`
   - added `tests/test_telegram_media_delivery_dedupe_patch.sh`
+  - added `tests/test_entrypoint_socket_safe_chown.sh`
 - Manual Telegram e2e (after `reset-state` + `up --build`) succeeded:
   - browser no longer fails with `No connected browser-capable nodes`
   - screenshot file created at `workspace/screenshots/manual-e2e.png` (valid PNG)
@@ -46,3 +54,7 @@
   - `workspace/` and `data/` are ignored and not tracked
   - documented commit metadata privacy check in README release checklist
   - ran dependency audit in container (`pnpm audit --prod --audit-level high`): `high=0`, `critical=0`
+- Latest full verification (2026-02-21):
+  - passed `WITH_DOCKER=1 WITH_RESET_FLOW=1 ./tests/run-all.sh`
+  - container stable `Up` after reset/build (no restart-loop)
+  - in-container suites green: media handlers, browser fallback, telegram delivery tests

@@ -13,6 +13,8 @@
 - Commit metadata may expose personal email/name even when file content has no secrets.
 - Gateway may fail to start with `ENOSPC: no space left on device, mkdir '/tmp/openclaw-10001'` when Docker `/tmp` is exhausted.
 - Docker image build may fail with `ERR_PNPM_ENOSPC` when Docker Desktop storage/build cache is full; recover with `docker image prune -a -f` and `docker builder prune -af`.
+- Container may restart-loop on startup if entrypoint runs `chown -R` over Chromium singleton socket files (`Invalid argument` on `SingletonSocket`).
+- Telegram duplicate screenshots can still occur when same media reaches delivery in separate `deliverReplies()` calls and `replyToMode=off` was not included in dedupe scope.
 - Dependency audit baseline (2026-02-21, before patch `0007`) had:
   - `fast-xml-parser` via AWS SDK chain (`critical` + `high`)
   - `minimatch` (`high`)

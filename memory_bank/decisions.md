@@ -13,3 +13,6 @@
 - Keep browser tool backward compatibility for URL field names: accept both `targetUrl` and `url`.
 - Use `OPENCLAW_TMPDIR=/home/openclaw/.openclaw/tmp` in Docker runtime to avoid `/tmp` space exhaustion (`ENOSPC`).
 - Keep an additional Telegram delivery-layer dedupe (`src/telegram/bot/delivery.ts`) to catch duplicates that bypass agent-level dedupe.
+- Apply dedupe across repeated delivery calls even when `replyToMode=off` (scope key uses `chatId + thread + no-reply`) to suppress double screenshot sends in DM/group paths.
+- Keep delivery dedupe TTL short (`30s`) to block immediate duplicates without suppressing legitimate later re-sends.
+- Avoid recursive `chown -R` on state dir at container start; skip socket files to prevent boot loops on Chromium singleton socket artifacts.

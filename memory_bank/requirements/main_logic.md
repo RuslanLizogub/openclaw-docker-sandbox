@@ -10,5 +10,8 @@
   - `workspace/`, `data/`, `.env`
 - For screenshot tasks:
   - save to `workspace/screenshots/...`
-  - return one media attachment per screenshot result
+  - return one media attachment per screenshot result (no duplicates)
   - if Telegram rejects image dimensions, retry as document.
+- After each reset/build cycle:
+  - ensure container is `Up` (no restart-loop)
+  - run `WITH_DOCKER=1 WITH_RESET_FLOW=1 ./tests/run-all.sh` before release.
